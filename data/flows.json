@@ -1,0 +1,9 @@
+{
+  "flows": [
+    {
+      "name": "Flow / Tạo Ảnh",
+      "enabled": true,
+      "type": "image"
+    }
+  ]
+}
