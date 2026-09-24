@@ -1,0 +1,190 @@
+name: Build Hn38videoAItool Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    name: Build Windows EXE
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Show repository files
+        shell: pwsh
+        run: |
+          Write-Host "Current directory:"
+          Get-Location
+
+          Write-Host ""
+          Write-Host "Repository tree:"
+          Get-ChildItem -Recurse -File |
+            Select-Object FullName
+
+      - name: Check required files
+        shell: pwsh
+        run: |
+          $files = @(
+            "requirements.txt",
+            "Hn38videoAItool.spec",
+            "desktop/main.py",
+            "assets/hn38.ico",
+            "assets/hn38.png",
+            "data/flows.json"
+          )
+
+          $missing = @()
+
+          foreach ($file in $files) {
+            if (Test-Path $file) {
+              Write-Host "OK: $file"
+            }
+            else {
+              Write-Host "MISSING: $file"
+              $missing += $file
+            }
+          }
+
+          if ($missing.Count -gt 0) {
+            Write-Error "Missing required files:"
+            $missing | ForEach-Object {
+              Write-Error $_
+            }
+            exit 1
+          }
+
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Validate Python source
+        shell: pwsh
+        run: |
+          python -m py_compile desktop/main.py
+
+      - name: Build application
+        shell: pwsh
+        run: |
+          pyinstaller `
+            --noconfirm `
+            --clean `
+            Hn38videoAItool.spec
+
+      - name: Verify EXE
+        shell: pwsh
+        run: |
+          $exe = "dist/Hn38videoAItool/Hn38videoAItool.exe"
+
+          if (!(Test-Path $exe)) {
+            Write-Error "EXE was not created: $exe"
+            exit 1
+          }
+
+          $size = (Get-Item $exe).Length
+
+          Write-Host "EXE created successfully."
+          Write-Host "Path: $exe"
+          Write-Host "Size: $size bytes"
+
+      - name: Prepare application folders
+        shell: pwsh
+        run: |
+          $app = "dist/Hn38videoAItool"
+
+          New-Item -ItemType Directory -Force `
+            "$app/browser_profiles/meta" | Out-Null
+
+          New-Item -ItemType Directory -Force `
+            "$app/browser_profiles/flow" | Out-Null
+
+          New-Item -ItemType Directory -Force `
+            "$app/output" | Out-Null
+
+          New-Item -ItemType Directory -Force `
+            "$app/logs" | Out-Null
+
+          @"
+          Hn38videoAItool v1.0.0
+
+          Developer:
+          Hoainguyenstudio
+
+          Zalo:
+          0965.043.000
+
+          Browser:
+          Google Chrome or Microsoft Edge
+
+          Meta AI and Google Flow use separate browser profiles.
+
+          Cookie/session information is supplied by the user.
+          Never share your session cookie with anyone.
+          "@ | Out-File `
+            "$app/README.txt" `
+            -Encoding UTF8
+
+      - name: Remove cache files
+        shell: pwsh
+        run: |
+          Get-ChildItem `
+            "dist/Hn38videoAItool" `
+            -Recurse `
+            -Directory `
+            -ErrorAction SilentlyContinue |
+          Where-Object {
+            $_.Name -in @(
+              "__pycache__",
+              ".pytest_cache",
+              ".mypy_cache"
+            )
+          } |
+          Remove-Item `
+            -Recurse `
+            -Force `
+            -ErrorAction SilentlyContinue
+
+      - name: Create Windows ZIP
+        shell: pwsh
+        run: |
+          $zip = "dist/Hn38videoAItool-Windows.zip"
+
+          if (Test-Path $zip) {
+            Remove-Item $zip -Force
+          }
+
+          Compress-Archive `
+            -Path "dist/Hn38videoAItool/*" `
+            -DestinationPath $zip `
+            -Force
+
+          if (!(Test-Path $zip)) {
+            Write-Error "ZIP was not created."
+            exit 1
+          }
+
+          Write-Host "ZIP created successfully:"
+          Get-Item $zip
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hn38videoAItool-Windows
+          path: dist/Hn38videoAItool-Windows.zip
+          if-no-files-found: error
